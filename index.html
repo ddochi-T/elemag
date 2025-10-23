@@ -101,26 +101,38 @@
             const button = document.getElementById('saveButton');
             const originalText = button.innerHTML;
 
-            // 버튼 비활성화
             button.innerHTML = '이미지 생성 중...';
             button.disabled = true;
 
-            const replacements = []; 
+            const replacements = [];
             const textareas = targetElement.querySelectorAll('textarea');
+
+            // [핵심 1] 복사할 스타일 속성 목록 (텍스트 렌더링에 필수적인 것들)
+            const propertiesToCopy = [
+                'width', 'height', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+                'border', 'border-width', 'border-style', 'border-color',
+                'box-sizing', 
+                'font-family', 'font-size', 'font-weight', 'line-height',
+                'letter-spacing', 'text-align', 'color'
+            ];
 
             textareas.forEach(textarea => {
                 const div = document.createElement('div');
-
-                // 1. [핵심] textarea의 '계산된 스타일'을 가져옵니다.
                 const computedStyle = window.getComputedStyle(textarea);
 
-                // 2. 클래스 복사 (폰트, 패딩 등)
+                // 1. 클래스 복사 (Tailwind의 기본 스타일)
                 div.className = textarea.className;
 
-                // 3. [핵심] 계산된 '너비'와 '높이'를 div에 강제로 적용합니다.
-                // 이것이 자동 줄 바꿈을 해결하는 열쇠입니다.
+                // 2. [변경] 계산된 핵심 스타일들을 '인라인 스타일'로 강제 적용
+                //    (html2canvas가 클래스보다 인라인 스타일을 더 잘 인식함)
+                propertiesToCopy.forEach(prop => {
+                    div.style[prop] = computedStyle.getPropertyValue(prop);
+                });
+
+                // 3. [핵심] 너비와 높이를 인라인으로 명시
                 div.style.width = computedStyle.getPropertyValue('width');
-                div.style.minHeight = computedStyle.getPropertyValue('height'); // 최소 높이 지정
+                div.style.height = 'auto'; // 높이는 자동으로 늘어나게
+                div.style.minHeight = computedStyle.getPropertyValue('height'); // 최소 높이는 원본 유지
 
                 // 4. \n(수동 줄 바꿈)을 <br> 태그로 변환
                 const contentWithBreaks = textarea.value.replace(/\n/g, '<br>');
@@ -128,59 +140,64 @@
 
                 // 5. CSS 스타일 조정 (자동 줄 바꿈)
                 div.style.wordWrap = 'break-word'; // 또는 'overflow-wrap: break-word;'
-                div.style.height = 'auto'; // 내용은 minHeight 이상으로 자동 증가
 
-                // 6. 빈 칸일 때 높이 유지 (placeholder)
+                // 6. 빈 칸일 때 높이 유지 및 placeholder 흉내
                 if (textarea.value.trim() === '') {
                     div.style.height = computedStyle.getPropertyValue('height');
+                    if (textarea.placeholder) {
+                        div.innerText = textarea.placeholder;
+                        // Tailwind의 placeholder 색상 (gray-400 또는 500)
+                        div.style.color = '#9CA3AF'; 
+                    }
                 }
 
                 // 7. textarea 숨기고 div 삽입
                 textarea.style.display = 'none';
                 textarea.parentNode.insertBefore(div, textarea.nextSibling); 
 
-                // 8. 나중에 복구하기 위해 기억
                 replacements.push({ textarea: textarea, div: div });
             });
 
-            // html2canvas를 사용하여 이미지 캡처
-            html2canvas(targetElement, { 
-                useCORS: true, 
-                allowTaint: true,
-                scale: 1.5 
-            }).then(canvas => {
-                // 학생 정보로 파일명 생성
-                const studentGrade = document.getElementById('studentGrade').value.trim() || 'G';
-                const studentClass = document.getElementById('studentClass').value.trim() || 'C';
-                const studentNumber = document.getElementById('studentNumber').value.trim() || 'N';
-                const studentName = document.getElementById('studentName').value.trim() || '학생';
-                
-                const filename = `${studentGrade}학년${studentClass}반${studentNumber}번_${studentName}_전자석평가.png`;
+            // [핵심 2] 렌더링을 위한 아주 짧은 지연 (100ms)
+            // 폰트 로딩 및 DOM 렌더링을 위한 '숨 쉴 틈'을 줍니다.
+            setTimeout(() => {
+                html2canvas(targetElement, { 
+                    useCORS: true, 
+                    allowTaint: true,
+                    scale: 1.5
+                }).then(canvas => {
+                    // 학생 정보로 파일명 생성
+                    const studentGrade = document.getElementById('studentGrade').value.trim() || 'G';
+                    const studentClass = document.getElementById('studentClass').value.trim() || 'C';
+                    const studentNumber = document.getElementById('studentNumber').value.trim() || 'N';
+                    const studentName = document.getElementById('studentName').value.trim() || '학생';
+                    
+                    const filename = `${studentGrade}학년${studentClass}반${studentNumber}번_${studentName}_전자석평가.png`;
 
-                // 이미지 다운로드
-                const imageDataUrl = canvas.toDataURL('image/png');
-                const link = document.createElement('a');
-                link.href = imageDataUrl;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                    // 이미지 다운로드
+                    const imageDataUrl = canvas.toDataURL('image/png');
+                    const link = document.createElement('a');
+                    link.href = imageDataUrl;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
 
-            }).catch(err => {
-                console.error('이미지 저장 중 오류 발생:', err);
-                button.innerHTML = '오류 발생 (다시 시도)';
-                button.disabled = false;
-            }).finally(() => {
-                // 캡처 후 div 제거 및 textarea 복구
-                replacements.forEach(item => {
-                    item.textarea.style.display = ''; // textarea 다시 보이게
-                    item.div.remove(); // 임시로 만든 div 제거
+                }).catch(err => {
+                    console.error('이미지 저장 중 오류 발생:', err);
+                    button.innerHTML = '오류 발생 (다시 시도)';
+                    button.disabled = false;
+                }).finally(() => {
+                    // 캡처 후 div 제거 및 textarea 복구
+                    replacements.forEach(item => {
+                        item.textarea.style.display = ''; 
+                        item.div.remove();
+                    });
+                    // 버튼 원상복구
+                    button.innerHTML = originalText;
+                    button.disabled = false;
                 });
-
-                // 버튼 원상복구
-                button.innerHTML = originalText;
-                button.disabled = false;
-            });
+            }, 100); // 100ms (0.1초) 지연
         }
     </script>
 
